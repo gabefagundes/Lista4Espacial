@@ -1,0 +1,211 @@
+---
+title: "Estatística Espacial - MAT02040 - Lista 4"
+author: | 
+    | IME - Universidade Federal do Rio Grande do Sul
+    | Prof.ª Márcia Barbian
+    | Alunos: Alisson Neimaier, Enzo Bertoldi, Gabriel Fagundes, Victor Frank
+date: "09/05/2021"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+source("ghat.R")
+pkgs <- c("tidyverse", "leaflet", "sf", "spatstat", "splancs", "sp", "spdep", "rgdal", "raster", "spatstat", "maptools", "RColorBrewer", "lattice", "geoR", "httr", "kableExtra", "scales")
+lapply(pkgs, require, character.only = TRUE)
+
+# pkgs <- c("spatstat", "splancs", "smacpod", "ggmap", "rgdal", "sf", "rvest", "ggplot2", "rgdal", "sf", "xml2", "kableExtra", "dplyr", "htmltools", "classInt", "gridExtra", "leaflet", "gsheet", "leaflet.extras")
+```
+
+### Questão 1 
+Para essa questão utilize o banco de dados disponível em https://data.cityofnewyork.us/Public-Safety/NYPD-Complaint-Data-Current-Year-To-Date-/5uac-w243. 
+
+Como esse banco possui muitos dados, escolha somente um dia do ano na sua análise.
+
+a) Avalie se os crimes podem ser considerados como um processo de poisson homogêneo.
+
+ 
+b) Faça uma estimação por kernel da intensidade de crimes na cidade de Nova York, considere diferentes valores para a bandwidth. 
+
+c) Faça a análise de dois tipos de crimes conjuntamente. 
+
+### Questão 2 
+O banco de dados a ser analisado é do departamento de polícia da Filadélfia e contêm dados de vítimas de armas de fogo, com informações demográficas e localização dos casos. Uma introdução ao banco e informações sobre obtenção dos dados está disponível no link: https://www.r-bloggers.com/2021/01/visualizing-geospatial-data-in-r-part-3-making-interactive-maps-with-leaflet/?utm_source=feedburner&utm_medium=email&utm_campaign=Feed%3A+RBloggers+%28R+bloggers%29.
+
+Para esse exercício, só considere os dados pontuais, a informação da área não será utilizada.
+
+```{r ETL, include=FALSE}
+neighborhoods_geojson <-
+    "https://raw.githubusercontent.com/azavea/geo-data/master/Neighborhoods_Philadelphia/Neighborhoods_Philadelphia.geojson"
+
+neighborhoods_raw <- sf::read_sf(neighborhoods_geojson)
+head(neighborhoods_raw)
+
+base_url <- "https://phl.carto.com/api/v2/sql"
+q <- "select * from shootings where year > 2018"
+
+shootings_geoJSON <- httr::modify_url(url = base_url,
+                                      query = list(q = q, format = "GeoJSON"))
+shootings_raw <- sf::read_sf(shootings_geoJSON)
+
+neighborhoods <- neighborhoods_raw %>%
+    dplyr::select(label = mapname)
+
+shootings <- shootings_raw %>%
+    dplyr::filter(point_x > -80 & point_y > 25) # points in FL
+
+
+```
+
+
+a) Faça um gráfico dos casos de vítimas de armas de fogo, esse gráfico deve conter apenas a informação pontual desses dados.
+```{r Q2A, warning=FALSE, message=FALSE}
+ggplot()+
+geom_sf(data = neighborhoods)+
+geom_sf(data = shootings, col = "#eba123", alpha = 0.5)+
+theme_minimal()+
+ggtitle("Vítimas de Arma de Fogo")
+```
+
+
+b) Refaça o gráfico acima, só com os pontos referentes à vitímas fatais.
+```{r Q2B, warning=FALSE, message=FALSE}
+fatal = shootings %>%
+filter(fatal == 1)
+
+ggplot()+
+geom_sf(data = neighborhoods)+
+geom_sf(data = fatal, col = "#ff003e", alpha = 0.5)+
+theme_minimal()+
+ggtitle("Vítimas Fatais")
+
+```
+
+c) Avalie se os crimes podem ser considerados como um processo de poisson homogêneo, considere somente o ano de 2021 na sua análise.
+```{r Q2C, warning=FALSE, message=FALSE}
+y21 = shootings %>%
+filter(year == 2021)
+
+ggplot() +
+    geom_sf(data = neighborhoods) +
+    geom_sf(data = y21, col = "#00aa22", alpha = 0.5) +
+    theme_minimal() +
+    ggtitle("Vítimas em 2021")
+
+
+y21_spdf = as_Spatial(y21)
+phil_spdf = as_Spatial(neighborhoods)
+
+d = seq(0, 0.015, length = 50)
+
+gh = Ghat(y21_spdf@coords, s = d)
+
+philadelphia <- read_csv("philadelphia.csv",
+                         col_types = cols(X1 = col_skip())) %>% as.points()
+
+envred = fcn.Ghatenv(y21_spdf@coords, philadelphia, s = d, nsim = 200,
+                     quiet = T)
+
+ggplot() +
+    geom_line(aes(d, gh)) +
+    geom_line(aes(d, envred$lower), col = "red", lty = 2) +
+    geom_line(aes(d, envred$upper), col = "red", lty = 2) +
+    theme_minimal()
+
+# Não podemos considerar como um PPH 
+
+```
+
+d) Para o ano de 2021, compare os casos de vítimas fatais e não fatais, elas possuem o mesmo padrão espacial?
+```{r Q2D, warning=FALSE, message=FALSE}
+y21_f = y21 %>%
+    filter(fatal == 1)
+
+y21_f = as_Spatial(y21_f)
+
+
+y21_nf = y21 %>%
+    filter(fatal == 0)
+
+y21_nf = as_Spatial(y21_nf)
+
+
+k1 <- khat(y21_f@coords, philadelphia, d)
+k2 <- khat(y21_nf@coords, philadelphia, d)
+
+
+Dr <- k1 - k2
+
+env2 = Kenv.label(y21_f@coords,
+                  y21_nf@coords,
+                  philadelphia, 200,
+                  d, quiet = T)
+
+
+ggplot() +
+    geom_line(aes(d, Dr)) +
+    geom_hline(yintercept = 0) +
+    geom_line(aes(d, env2$lower), col = "red", lty = 2) +
+    geom_line(aes(d, env2$upper), col = "red", lty = 2) +
+    geom_ribbon(aes(
+        x = d,
+        ymin = env2$lower,
+        ymax = env2$upper
+    ),
+    alpha = 0.2,
+    fill = "red") 
+```
+
+e) Para o ano de 2021, compare os casos da raça branca e outras, elas possuem o mesmo padrão espacial? Faça os gráficos com cada um desses grupos.
+```{r Q2E, warning=FALSE, message=FALSE, fig.width=12, fig.retina=2}
+y21_W = y21 %>%
+    filter(race == "W") %>%
+    as_Spatial
+
+
+y21_NW = y21 %>%
+    filter(race != "W") %>%
+    as_Spatial
+
+ggplot() +
+    geom_sf(data = neighborhoods) +
+    geom_sf(
+        aes(fill = race),
+        data = y21,
+        alpha = 0.8,
+        shape = 21,
+        col = "black"
+    ) +
+    theme_minimal() +
+    ggtitle("Vítimas em 2021 - por Raça") +
+    facet_wrap( ~ race, nrow = 1) +
+    scale_x_continuous(breaks = seq(-74.5, -75.5, by = -.125))
+```
+O plot demonstra uma diferença nítida entre as diferentes raças. Nos dados, as raças são codificadas da seguinte forma: A para asiáticos, B para afro-americanos / negros e W para brancos. A primeira e maior diferença notada visualmente é justo a incidência de casos entre as raças, largamente superior para o grupo B. Além disso, podemos dizer que a região central concentra o maior número de casos, tendo ocorrências independente de grupo.
+```{r Q2E2, echo=FALSE, warning=FALSE, message=FALSE}
+df <- as.data.frame(y21) %>% group_by(race) %>% 
+    summarise(n = n()) %>% 
+    mutate(ratio = scales::percent(n / sum(n), accuracy = .01))
+
+kable(df, align = "c") %>% row_spec(0, background = "#F95757", color = "black") %>%
+    kable_styling(
+        bootstrap_options = c("striped", "bordered", "condensed"),
+        position = "center"
+    )
+```
+
+
+f) Faça um mapa de kernel somente com as vítimas de mais de 50 anos e compare com o mapa das vítimas de entre 18 e 30 anos. Elas possuem o mesmo padrão espacial?
+```{r Q2F, warning=FALSE, message=FALSE}
+y21_50p <- y21 %>%
+    filter(as.integer(y21$age) >= 50)
+    
+y21_1830 <- y21 %>%
+    filter(as.integer(y21$age) >= 18 & as.integer(y21$age) <= 30)
+
+# kernel2d calls goes here
+
+```
