@@ -27,10 +27,98 @@ Como esse banco possui muitos dados, escolha somente um dia do ano na sua análi
 
 a) Avalie se os crimes podem ser considerados como um processo de poisson homogêneo.
 
- 
+Pela estatística G e pelo _quadrat.test_ temos evidência para rejeitar a hipótese nula dos dados serem um processo de poisson homogênio.
+
+```{r Estatística G, echo=FALSE, warning=F, message=F}
+data = read.csv('newyorkdata.csv')
+
+shape = read_csv('nyc_shape.csv',
+                 col_types = cols(X1 = col_skip())) %>% as.points
+
+df = SpatialPointsDataFrame(coords = data[,c("Longitude", "Latitude")],
+                            data = data.frame(data[,3]))
+
+d = seq(0, 
+        0.03, 
+        by=0.0001)
+
+control = fcn.Ghatenv(df@coords, 
+                      shape,
+                      nsim = 199,
+                      s = d,
+                      pmin=0.025,
+                      pmax=0.975, 
+                      quiet = T)
+
+gh1 = Ghat(df@coords, d)
+
+G2 = 1-exp(-pi * d^2 * nrow(data)/areapl(shape))
+
+
+ggplot() +
+  geom_line(aes(d, gh1)) +
+  geom_line(aes(d, control$lower), col = "red", lty = 2) +
+  geom_line(aes(d, control$upper), col = "red", lty = 2) +
+  geom_line(aes(d, G2)) +
+  theme_minimal()
+
+```
+
+```{r Quadrat Test, echo=FALSE, warning=F, message=F}
+nval = ppp(y = data$Latitude, 
+           x = data$Longitude,
+           window = owin(xrange = c(min(shape[,1]),max(shape[,1])), 
+                         yrange = c(min(shape[,2]),max(shape[,2]))))
+
+quadrat.test(nval)
+```
+
 b) Faça uma estimação por kernel da intensidade de crimes na cidade de Nova York, considere diferentes valores para a bandwidth. 
 
+```{r Kernel Density, echo=FALSE, warning=F, message=F, results=FALSE}
+band = 0.68 * sqrt(areapl(shape))/nrow(data)^(0.2)
+bw = ((sqrt(var(data$Latitude)) + sqrt(var(data$Longitude)))/2)/nrow(shape)^(1/6)
+
+
+x = kernel2d(pts = df@coords, 
+             poly = shape, 
+             h0 = band)
+image(x, 'Kernel 1')
+pointmap(df@coords, add = T)
+polymap(shape, add = T)
+
+x = kernel2d(pts = df@coords, 
+             poly = shape, 
+             h0 = bw)
+image(x, 'Kernel 2')
+pointmap(df@coords, add = T)
+polymap(shape, add = T)
+```
+
 c) Faça a análise de dois tipos de crimes conjuntamente. 
+
+Iremos analisar os crimes classificados como _FELONY_ e _VIOLATION_. Conforme o gráfico da estatística K conjunta e o teste para igualdade de distribuições, temos evidência para rejeitar a hipóstese nula de igualdade espacial.
+
+```{r Kdest, echo=FALSE, results=FALSE, warning=FALSE}
+
+dfc = data %>% filter(LAW_CAT_CD %in% c('FELONY', 'VIOLATION'))
+  
+CaseControlPPP = ppp(dfc$Latitude, 
+                     dfc$Longitude, 
+                     range(dfc$Latitude), 
+                     range(dfc$Longitude), 
+                     marks = as.factor(dfc$LAW_CAT_CD))
+
+kdest = kdest(CaseControlPPP, case = 2,nsim=999, level=0.95, correction=c("isotropic", "Ripley"))  #"smacpod" package
+
+```
+
+```{r Results, echo=FALSE, warning=F, message=F}
+
+plot(kdest) 
+
+kdplus.test(kdest)
+```
 
 ### Questão 2 
 O banco de dados a ser analisado é do departamento de polícia da Filadélfia e contêm dados de vítimas de armas de fogo, com informações demográficas e localização dos casos. Uma introdução ao banco e informações sobre obtenção dos dados está disponível no link: https://www.r-bloggers.com/2021/01/visualizing-geospatial-data-in-r-part-3-making-interactive-maps-with-leaflet/?utm_source=feedburner&utm_medium=email&utm_campaign=Feed%3A+RBloggers+%28R+bloggers%29.
