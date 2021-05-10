@@ -1,11 +1,11 @@
 fcn.Ghatenv <- function(pts, poly, nsim, s, pmin=0.025,
-                        pmax=0.975, quiet = F)
+                        pmax=0.975, quiet = T)
 {
     #pts: eventos originais, padrao observado
     #poly: poligono onde eventos devem ser gerados
     #nsim: numero desejado de simulacoes
     #s: vetor com o grid do eixo de distancia
-    # probabilidades para calcular enevelopes de confianca
+    # probabilidades para calcular envelopes de confianca
     # retorna lista com 3 vetores, s, o envelope inferior e o superior
     n <- npts(pts) # numero de eventos
     len <- length(s)
