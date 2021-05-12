@@ -14,7 +14,7 @@ output:
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 source("ghat.R")
-pkgs <- c("tidyverse", "leaflet", "sf", "spatstat", "splancs", "sp", "spdep", "rgdal", "raster", "spatstat", "maptools", "RColorBrewer", "lattice", "geoR", "httr", "kableExtra", "scales")
+pkgs <- c("tidyverse", "leaflet", "sf", "spatstat", "splancs", "sp", "spdep", "rgdal", "raster", "spatstat", "maptools", "RColorBrewer", "lattice", "geoR", "httr", "kableExtra", "scales", 'smacpod')
 lapply(pkgs, require, character.only = TRUE)
 
 # pkgs <- c("spatstat", "splancs", "smacpod", "ggmap", "rgdal", "sf", "rvest", "ggplot2", "rgdal", "sf", "xml2", "kableExtra", "dplyr", "htmltools", "classInt", "gridExtra", "leaflet", "gsheet", "leaflet.extras")
@@ -175,7 +175,7 @@ ggtitle("Vítimas Fatais")
 c) Avalie se os crimes podem ser considerados como um processo de poisson homogêneo, considere somente o ano de 2021 na sua análise.
 ```{r Q2C, warning=FALSE, message=FALSE}
 y21 = shootings %>%
-filter(year == 2021)
+  filter(year == 2021)
 
 ggplot() +
     geom_sf(data = neighborhoods) +
@@ -203,9 +203,10 @@ ggplot() +
     geom_line(aes(d, envred$upper), col = "red", lty = 2) +
     theme_minimal()
 
-# Não podemos considerar como um PPH 
+ 
 
 ```
+Perceba que no gráfico de envelopes acima, a linha preta (que representa a função G do nosso processo) se localiza fora das bandas de confiança geradas, portanto não podemos considerar o processo acima como um processo de Poisson homogêneo. 
 
 d) Para o ano de 2021, compare os casos de vítimas fatais e não fatais, elas possuem o mesmo padrão espacial?
 ```{r Q2D, warning=FALSE, message=FALSE}
@@ -246,6 +247,8 @@ ggplot() +
     alpha = 0.2,
     fill = "red") 
 ```
+É claro ver que, de acordo com a combinação das estatísticas K para igualdade de distribuições, os dois grupos seguem um mesmo padrão espacial. 
+
 
 e) Para o ano de 2021, compare os casos da raça branca e outras, elas possuem o mesmo padrão espacial? Faça os gráficos com cada um desses grupos.
 ```{r Q2E, warning=FALSE, message=FALSE, fig.width=12, fig.retina=2}
@@ -271,8 +274,36 @@ ggplot() +
     ggtitle("Vítimas em 2021 - por Raça") +
     facet_wrap( ~ race, nrow = 1) +
     scale_x_continuous(breaks = seq(-74.5, -75.5, by = -.125))
+
+
+
+k1 <- khat(y21_W@coords, philadelphia, d)
+k2 <- khat(y21_NW@coords, philadelphia, d)
+
+
+Dr <- k1 - k2
+
+env4 = Kenv.label(y21_W@coords,
+                  y21_NW@coords,
+                  philadelphia, 200,
+                  d, quiet = T)
+
+
+ggplot() +
+    geom_line(aes(d, Dr)) +
+    geom_hline(yintercept = 0) +
+    geom_line(aes(d, env4$lower), col = "red", lty = 2) +
+    geom_line(aes(d, env4$upper), col = "red", lty = 2) +
+    geom_ribbon(aes(
+        x = d,
+        ymin = env4$lower,
+        ymax = env4$upper
+    ),
+    alpha = 0.2,
+    fill = "red") 
+
 ```
-O plot demonstra uma diferença nítida entre as diferentes raças. Nos dados, as raças são codificadas da seguinte forma: A para asiáticos, B para afro-americanos / negros e W para brancos. A primeira e maior diferença notada visualmente é justo a incidência de casos entre as raças, largamente superior para o grupo B. Além disso, podemos dizer que a região central concentra o maior número de casos, tendo ocorrências independente de grupo.
+O plot da estatística K conjunta demonstra uma diferença nítida entre as diferentes raças. Nos dados, as raças são codificadas da seguinte forma: A para asiáticos, B para afro-americanos / negros e W para brancos. A primeira e maior diferença notada visualmente é justo a incidência de casos entre as raças, largamente superior para o grupo B. Além disso, podemos dizer que a região central concentra o maior número de casos, tendo ocorrências independente de grupo.
 ```{r Q2E2, echo=FALSE, warning=FALSE, message=FALSE}
 df <- as.data.frame(y21) %>% group_by(race) %>% 
     summarise(n = n()) %>% 
@@ -289,11 +320,52 @@ kable(df, align = "c") %>% row_spec(0, background = "#F95757", color = "black") 
 f) Faça um mapa de kernel somente com as vítimas de mais de 50 anos e compare com o mapa das vítimas de entre 18 e 30 anos. Elas possuem o mesmo padrão espacial?
 ```{r Q2F, warning=FALSE, message=FALSE}
 y21_50p <- y21 %>%
-    filter(as.integer(y21$age) >= 50)
+  filter(as.integer(y21$age) >= 50)%>%
+  as_Spatial()
     
 y21_1830 <- y21 %>%
-    filter(as.integer(y21$age) >= 18 & as.integer(y21$age) <= 30)
+    filter(as.integer(y21$age) >= 18 & as.integer(y21$age) <= 30)%>%
+  as_Spatial()
 
 # kernel2d calls goes here
+par(mfrow = c(1,2))
+
+k_50p = kernel2d(y21_50p@coords, philadelphia, h0 = 0.025, nx = 500, ny = 500, quiet = T)
+polymap(philadelphia)
+image(k_50p, add = T, col=terrain.colors(20))
+title(main = "Vítimas com mais de 50 anos")
+
+
+k_30m = kernel2d(y21_1830@coords, philadelphia, h0 = 0.025, nx = 500, ny = 500, quiet = T)
+polymap(philadelphia)
+image(k_30m, add = T, col=terrain.colors(20))
+title(main = "Vítimas com idade entre 18 e 30 anos")
+
+
+k1 <- khat(y21_50p@coords, philadelphia, d)
+k2 <- khat(y21_1830@coords, philadelphia, d)
+
+
+Dr <- k1 - k2
+
+env3 = Kenv.label(y21_50p@coords,
+                  y21_1830@coords,
+                  philadelphia, 200,
+                  d, quiet = T)
+
+
+ggplot() +
+    geom_line(aes(d, Dr)) +
+    geom_hline(yintercept = 0) +
+    geom_line(aes(d, env3$lower), col = "red", lty = 2) +
+    geom_line(aes(d, env3$upper), col = "red", lty = 2) +
+    geom_ribbon(aes(
+        x = d,
+        ymin = env3$lower,
+        ymax = env3$upper
+    ),
+    alpha = 0.2,
+    fill = "red") 
 
 ```
+Como podemos ver pelo segundo gráfico, a linha de $D_r$ se encontra dentro das bandas de confiança geradas por simulação de MC. Portanto, não temos razões para dizer que os dois grupos não possuem o mesmo padrão espacial. 
